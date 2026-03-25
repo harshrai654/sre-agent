@@ -1,0 +1,32 @@
+# Development Dockerfile with hot reload
+FROM node:22-alpine
+
+# Install dependencies for development and dumb-init for signal handling
+RUN apk add --no-cache git dumb-init
+
+WORKDIR /app
+
+# Copy package files
+COPY package*.json ./
+
+# Install ALL dependencies (including devDependencies)
+RUN npm ci
+
+# Copy configuration files
+COPY tsconfig.json ./
+COPY vitest.config.ts ./
+
+# Create non-root user for development
+RUN addgroup -g 1001 -S nodejs && \
+    adduser -S sre-agent -u 1001 -G nodejs && \
+    chown -R sre-agent:nodejs /app
+
+USER sre-agent
+
+# Use tsx for hot reload in development
+ENV NODE_ENV=development
+ENV LOG_LEVEL=debug
+
+# Use dumb-init as PID 1 to properly handle signals
+ENTRYPOINT ["dumb-init", "--"]
+CMD ["npm", "run", "dev"]
