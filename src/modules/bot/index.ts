@@ -148,6 +148,12 @@ export function createBotModule(deps: BotModuleDeps): BotModule {
           },
           "Could not extract generatorURL from linked message",
         );
+        await postThreadReply(
+          say,
+          triggerMessageTS,
+          "❌ I couldn't find a Grafana generator link in the linked alert message. Please link a valid Grafana alert message and try again.",
+        );
+        return;
       }
 
       // Step 5: Post acknowledgement reply in thread on the @mention message
