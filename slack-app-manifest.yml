@@ -1,0 +1,55 @@
+display_information:
+  name: alert-cop
+  description: AI-powered SRE bot that analyzes Grafana alerts via Slack mentions
+  background_color: "#2c2d33"
+  long_description: |
+    The alert-cop is an in-cluster Kubernetes service that acts as a Slack bot.
+
+    When you @mention the bot with a Grafana Alertmanager Slack message link, it:
+    1. Fetches the original Grafana alert message from Slack
+    2. Extracts the alert's generatorURL and rule UID
+    3. Queries the Grafana MCP server for live alert state
+    4. Runs a DeepAgent session with Grafana MCP tools and Kubernetes tools
+    5. Posts the agent's analysis as a Slack thread reply
+
+    Read-only by design - never writes to Grafana, never executes commands,
+    never accesses Kubernetes secrets or configmaps.
+
+features:
+  bot_user:
+    display_name: alert-cop
+    always_online: true
+
+oauth_config:
+  scopes:
+    bot:
+      # Required to read messages and fetch conversation history
+      # Needed for: fetchLinkedMessage() to get Grafana alert messages
+      - channels:history
+      - groups:history
+
+      # Required to post replies in threads
+      # Needed for: say() calls for ack replies and error messages
+      - chat:write
+      - chat:write.public
+
+      # Required to read app mention events
+      # Needed for: app_mention event handler
+      - app_mentions:read
+
+      # Required to identify users in @mentions
+      # Needed for: Parsing user mentions from event.text
+      - users:read
+
+settings:
+  # Enable Socket Mode (WebSocket connection instead of HTTP endpoints)
+  # Required for: Running bot behind firewalls or in Kubernetes without public endpoints
+  socket_mode_enabled: true
+
+  # Enable event subscriptions for Socket Mode
+  event_subscriptions:
+    # Socket Mode doesn't require a Request URL
+    bot_events:
+      # Core event - triggered when bot is @mentioned
+      # Required for: Main workflow trigger
+      - app_mention
