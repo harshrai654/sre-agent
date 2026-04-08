@@ -169,6 +169,27 @@ describe("extractRuleUID", () => {
 
       expect(result).toBe("cpu-alert");
     });
+
+    it("should extract UID from URL with namespace/datasource segment (e.g., /alerting/grafana/<uid>/view)", () => {
+      const url = "https://tools.koinx.com/grafana/alerting/grafana/dem26jtj7zsw0a/view?orgId=1";
+      const result = extractRuleUID(url);
+
+      expect(result).toBe("dem26jtj7zsw0a");
+    });
+
+    it("should extract UID from URL with namespace and without /view", () => {
+      const url = "https://grafana.example.com/alerting/prometheus/alert-123";
+      const result = extractRuleUID(url);
+
+      expect(result).toBe("alert-123");
+    });
+
+    it("should extract UID from URL with multiple intermediate segments", () => {
+      const url = "https://grafana.example.com/alerting/folder/subfolder/alert-456/view";
+      const result = extractRuleUID(url);
+
+      expect(result).toBe("alert-456");
+    });
   });
 
   describe("invalid URLs", () => {
@@ -184,16 +205,20 @@ describe("extractRuleUID", () => {
       expect(() => extractRuleUID(url)).toThrow("Could not extract rule UID from generatorURL");
     });
 
-    it("should throw error for URL with wrong path pattern", () => {
+    it("should extract UID from URL with base path prefix (e.g., /api/alerting/...)", () => {
       const url = "https://grafana.example.com/api/alerting/abc123";
 
-      expect(() => extractRuleUID(url)).toThrow("Could not extract rule UID from generatorURL");
+      // Base path prefix before /alerting is handled - finds 'alerting' anywhere in path
+      const result = extractRuleUID(url);
+      expect(result).toBe("abc123");
     });
 
-    it("should throw error for URL with trailing slash after view", () => {
+    it("should handle URL with trailing slash after view gracefully", () => {
       const url = "https://grafana.example.com/alerting/abc123/view/";
 
-      expect(() => extractRuleUID(url)).toThrow("Could not extract rule UID from generatorURL");
+      // Trailing slash is handled gracefully - still extracts the UID
+      const result = extractRuleUID(url);
+      expect(result).toBe("abc123");
     });
 
     it("should throw error for empty string", () => {
