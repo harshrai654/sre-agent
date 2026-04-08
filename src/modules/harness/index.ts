@@ -87,7 +87,7 @@ function contentToTranscriptString(content: BaseMessage["content"]): string {
 export function extractFinalMessage(messages: BaseMessage[]): string {
   for (let i = messages.length - 1; i >= 0; i--) {
     const message = messages[i];
-    if (message._getType() !== "ai") {
+    if (message.type !== "ai") {
       continue;
     }
     const { content } = message;
@@ -106,7 +106,7 @@ export function extractFinalMessage(messages: BaseMessage[]): string {
 }
 
 function headerForMessage(message: BaseMessage): string {
-  const t = message._getType();
+  const t = message.type;
   if (t === "human") {
     return "### HUMAN";
   }
