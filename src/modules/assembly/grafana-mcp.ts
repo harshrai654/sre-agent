@@ -332,12 +332,25 @@ export async function fetchLiveAlertState(
     rule_uid: ruleUID,
   });
 
-  logger.debug({ response, ruleUID }, "Raw MCP tool response");
+  logger.debug({ response, ruleUID, responseType: typeof response }, "Raw MCP tool response");
 
-  // Defensive mapping: handle cases where response might not be an object
-  const raw = (typeof response === "object" && response !== null)
-    ? (response as RawMcpResponse)
-    : {};
+  // Defensive mapping: handle cases where response might be a JSON string or an object
+  let raw: RawMcpResponse;
+  if (typeof response === "object" && response !== null) {
+    raw = response as RawMcpResponse;
+  } else if (typeof response === "string") {
+    // MCP sometimes returns JSON as a string - parse it
+    try {
+      const parsed = JSON.parse(response);
+      raw = (typeof parsed === "object" && parsed !== null) ? parsed : {};
+    } catch {
+      logger.error({ response: response.substring(0, 200), ruleUID }, "Failed to parse MCP response as JSON");
+      raw = {};
+    }
+  } else {
+    logger.error({ responseType: typeof response, ruleUID }, "Unexpected MCP response type");
+    raw = {};
+  }
 
   // Extract active alerts array
   const alerts = extractAlertsArray(raw, "alerts", ruleUID);
