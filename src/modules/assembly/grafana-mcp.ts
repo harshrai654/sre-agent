@@ -35,8 +35,12 @@ export function createGrafanaMcpClient(): MultiServerMCPClient {
 /**
  * Extracts the rule UID from a Grafana alert generator URL.
  *
- * Grafana generator URLs have the format:
+ * Grafana generator URLs have various formats:
  * https://<host>/alerting/<ruleUID>/view?...
+ * https://<host>/alerting/<namespace>/<ruleUID>/view?...
+ *
+ * The rule UID is typically the last path segment before optional "/view",
+ * or the last segment if no "/view" suffix exists.
  *
  * @param generatorURL - The Grafana generator URL from the alert
  * @returns The extracted rule UID
@@ -52,13 +56,37 @@ export function extractRuleUID(generatorURL: string): string {
     throw new Error("Could not extract rule UID from generatorURL");
   }
 
-  // Match the pattern /alerting/<ruleUID>/view or /alerting/<ruleUID>
-  const match = pathname.match(/^\/alerting\/([^/]+)(?:\/view)?$/);
-  if (!match) {
+  // Split pathname into segments
+  const segments = pathname.split("/").filter(Boolean);
+
+  // Find the "alerting" segment index (may not be at start due to base paths like /grafana)
+  const alertingIndex = segments.indexOf("alerting");
+  if (alertingIndex === -1 || alertingIndex >= segments.length - 1) {
     throw new Error("Could not extract rule UID from generatorURL");
   }
 
-  return match[1];
+  // Extract segments after "alerting"
+  const afterAlerting = segments.slice(alertingIndex + 1);
+
+  // Remove optional "view" suffix if present
+  if (afterAlerting.length > 0 && afterAlerting[afterAlerting.length - 1] === "view") {
+    afterAlerting.pop();
+  }
+
+  // After removing suffix, the last segment is the rule UID
+  // This handles: /alerting/<uid>, /alerting/<namespace>/<uid>, /base/alerting/<uid>
+  if (afterAlerting.length === 0) {
+    throw new Error("Could not extract rule UID from generatorURL");
+  }
+
+  const ruleUID = afterAlerting[afterAlerting.length - 1];
+
+  // Validate that the extracted UID looks reasonable (not empty)
+  if (!ruleUID || ruleUID.length === 0) {
+    throw new Error("Could not extract rule UID from generatorURL");
+  }
+
+  return ruleUID;
 }
 
 // Helper type for raw MCP response
