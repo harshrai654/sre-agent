@@ -40,6 +40,9 @@ RUN npm ci --only=production && \
 # Copy built application from builder stage
 COPY --from=builder /build/dist ./dist
 
+# Copy templates folder (not compiled by TypeScript, needed at runtime)
+COPY --from=builder /build/src/templates ./dist/templates
+
 # Change ownership to non-root user
 RUN chown -R sre-agent:nodejs /app
 
