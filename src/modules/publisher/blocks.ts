@@ -75,7 +75,7 @@ export function buildAnalysisBlocks(result: AnalysisResult): KnownBlock[] {
       type: "header",
       text: {
         type: "plain_text",
-        text: "🤖 SRE Agent Analysis",
+        text: "🤖 Alert Cop Analysis",
         emoji: true,
       },
     },

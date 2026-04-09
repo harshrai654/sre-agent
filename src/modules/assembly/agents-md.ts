@@ -23,8 +23,8 @@ export interface AgentsMdLoader {
  * the service.
  *
  * If AGENTS_MD_PATH is not set, the loader returns empty content and becomes
- * a no-op. This allows the service to run without custom agent instructions,
- * falling back to default behavior.
+ * a no-op. This is separate from `src/templates/system-instructions.md`, which
+ * assembly always loads — point AGENTS_MD_PATH only at an optional extra AGENTS.md.
  *
  * @param logger - Pino logger instance for operational logging
  * @returns AgentsMdLoader instance with getContent, start, and stop methods

@@ -4,6 +4,7 @@ import {
   createGrafanaMcpClient,
   extractRuleUID,
   fetchLiveAlertState,
+  parseGrafanaMcpHeadersFromEnv,
 } from "../grafana-mcp.js";
 import type { LiveAlertState } from "../../../types/grafana.js";
 
@@ -23,7 +24,9 @@ const mockGetTools = vi.fn();
 const mockInvoke = vi.fn();
 
 vi.mock("@langchain/mcp-adapters", () => ({
-  MultiServerMCPClient: vi.fn().mockImplementation(function (this: { getTools: typeof mockGetTools }) {
+  MultiServerMCPClient: vi.fn().mockImplementation(function (this: {
+    getTools: typeof mockGetTools;
+  }) {
     this.getTools = mockGetTools;
     return this;
   }),
@@ -34,6 +37,7 @@ describe("createGrafanaMcpClient", () => {
 
   beforeEach(() => {
     process.env = { ...originalEnv };
+    delete process.env.GRAFANA_MCP_HEADERS;
     vi.clearAllMocks();
   });
 
@@ -53,6 +57,7 @@ describe("createGrafanaMcpClient", () => {
           grafana: {
             url: "https://grafana-mcp.example.com/mcp",
             transport: "http",
+            headers: {},
           },
         },
       });
@@ -69,6 +74,7 @@ describe("createGrafanaMcpClient", () => {
           grafana: {
             url: "http://localhost:3000/mcp",
             transport: "http",
+            headers: {},
           },
         },
       });
@@ -85,6 +91,49 @@ describe("createGrafanaMcpClient", () => {
           grafana: {
             url: "https://grafana.example.com/api/mcp",
             transport: "http",
+            headers: {},
+          },
+        },
+      });
+    });
+
+    it("should pass headers from JSON GRAFANA_MCP_HEADERS", () => {
+      process.env.GRAFANA_MCP_URL = "https://mcp.example.com/mcp";
+      process.env.GRAFANA_MCP_HEADERS =
+        '{"CF-Access-Client-Id":"id1","CF-Access-Client-Secret":"secret1"}';
+
+      createGrafanaMcpClient();
+
+      expect(MultiServerMCPClient).toHaveBeenCalledWith({
+        mcpServers: {
+          grafana: {
+            url: "https://mcp.example.com/mcp",
+            transport: "http",
+            headers: {
+              "CF-Access-Client-Id": "id1",
+              "CF-Access-Client-Secret": "secret1",
+            },
+          },
+        },
+      });
+    });
+
+    it("should pass headers from comma-separated GRAFANA_MCP_HEADERS", () => {
+      process.env.GRAFANA_MCP_URL = "https://mcp.example.com/mcp";
+      process.env.GRAFANA_MCP_HEADERS =
+        "CF-Access-Client-Id: id1, CF-Access-Client-Secret: secret1";
+
+      createGrafanaMcpClient();
+
+      expect(MultiServerMCPClient).toHaveBeenCalledWith({
+        mcpServers: {
+          grafana: {
+            url: "https://mcp.example.com/mcp",
+            transport: "http",
+            headers: {
+              "CF-Access-Client-Id": "id1",
+              "CF-Access-Client-Secret": "secret1",
+            },
           },
         },
       });
@@ -95,20 +144,67 @@ describe("createGrafanaMcpClient", () => {
     it("should throw error when GRAFANA_MCP_URL is not set", () => {
       delete process.env.GRAFANA_MCP_URL;
 
-      expect(() => createGrafanaMcpClient()).toThrow("GRAFANA_MCP_URL is required");
+      expect(() => createGrafanaMcpClient()).toThrow(
+        "GRAFANA_MCP_URL is required",
+      );
     });
 
     it("should throw error when GRAFANA_MCP_URL is empty string", () => {
       process.env.GRAFANA_MCP_URL = "";
 
-      expect(() => createGrafanaMcpClient()).toThrow("GRAFANA_MCP_URL is required");
+      expect(() => createGrafanaMcpClient()).toThrow(
+        "GRAFANA_MCP_URL is required",
+      );
     });
 
     it("should throw error when GRAFANA_MCP_URL is only whitespace", () => {
       process.env.GRAFANA_MCP_URL = "   ";
 
-      expect(() => createGrafanaMcpClient()).toThrow("GRAFANA_MCP_URL is required");
+      expect(() => createGrafanaMcpClient()).toThrow(
+        "GRAFANA_MCP_URL is required",
+      );
     });
+  });
+});
+
+describe("parseGrafanaMcpHeadersFromEnv", () => {
+  const originalEnv = process.env;
+
+  beforeEach(() => {
+    process.env = { ...originalEnv };
+    delete process.env.GRAFANA_MCP_HEADERS;
+  });
+
+  afterEach(() => {
+    process.env = originalEnv;
+  });
+
+  it("should return empty object when GRAFANA_MCP_HEADERS is unset", () => {
+    expect(parseGrafanaMcpHeadersFromEnv()).toEqual({});
+  });
+
+  it("should parse JSON object with string values", () => {
+    process.env.GRAFANA_MCP_HEADERS =
+      '{"CF-Access-Client-Id":"cid","CF-Access-Client-Secret":"sec"}';
+    expect(parseGrafanaMcpHeadersFromEnv()).toEqual({
+      "CF-Access-Client-Id": "cid",
+      "CF-Access-Client-Secret": "sec",
+    });
+  });
+
+  it("should split comma-separated pairs on first colon only", () => {
+    process.env.GRAFANA_MCP_HEADERS = "A: part:with:colons, B: tail";
+    expect(parseGrafanaMcpHeadersFromEnv()).toEqual({
+      A: "part:with:colons",
+      B: "tail",
+    });
+  });
+
+  it("should throw when JSON is invalid", () => {
+    process.env.GRAFANA_MCP_HEADERS = "{not-json";
+    expect(() => parseGrafanaMcpHeadersFromEnv()).toThrow(
+      "GRAFANA_MCP_HEADERS looks like JSON",
+    );
   });
 });
 
@@ -136,42 +232,48 @@ describe("extractRuleUID", () => {
     });
 
     it("should extract UID with complex alphanumeric format", () => {
-      const url = "https://grafana.example.com/alerting/abc123_test-456/view?orgId=1";
+      const url =
+        "https://grafana.example.com/alerting/abc123_test-456/view?orgId=1";
       const result = extractRuleUID(url);
 
       expect(result).toBe("abc123_test-456");
     });
 
     it("should extract UID with UUID format", () => {
-      const url = "https://grafana.example.com/alerting/a1b2c3d4-e5f6-7890-abcd-ef1234567890/view";
+      const url =
+        "https://grafana.example.com/alerting/a1b2c3d4-e5f6-7890-abcd-ef1234567890/view";
       const result = extractRuleUID(url);
 
       expect(result).toBe("a1b2c3d4-e5f6-7890-abcd-ef1234567890");
     });
 
     it("should extract UID from URL with port", () => {
-      const url = "https://grafana.example.com:3000/alerting/abc123/view?orgId=1";
+      const url =
+        "https://grafana.example.com:3000/alerting/abc123/view?orgId=1";
       const result = extractRuleUID(url);
 
       expect(result).toBe("abc123");
     });
 
     it("should extract UID from URL with subdomain", () => {
-      const url = "https://monitoring.internal.company.com/alerting/prod-alert-001/view";
+      const url =
+        "https://monitoring.internal.company.com/alerting/prod-alert-001/view";
       const result = extractRuleUID(url);
 
       expect(result).toBe("prod-alert-001");
     });
 
     it("should extract UID with URL containing special characters in query", () => {
-      const url = "https://grafana.example.com/alerting/cpu-alert/view?orgId=1&var-job=app-1%2F2";
+      const url =
+        "https://grafana.example.com/alerting/cpu-alert/view?orgId=1&var-job=app-1%2F2";
       const result = extractRuleUID(url);
 
       expect(result).toBe("cpu-alert");
     });
 
     it("should extract UID from URL with namespace/datasource segment (e.g., /alerting/grafana/<uid>/view)", () => {
-      const url = "https://tools.koinx.com/grafana/alerting/grafana/dem26jtj7zsw0a/view?orgId=1";
+      const url =
+        "https://tools.koinx.com/grafana/alerting/grafana/dem26jtj7zsw0a/view?orgId=1";
       const result = extractRuleUID(url);
 
       expect(result).toBe("dem26jtj7zsw0a");
@@ -185,7 +287,8 @@ describe("extractRuleUID", () => {
     });
 
     it("should extract UID from URL with multiple intermediate segments", () => {
-      const url = "https://grafana.example.com/alerting/folder/subfolder/alert-456/view";
+      const url =
+        "https://grafana.example.com/alerting/folder/subfolder/alert-456/view";
       const result = extractRuleUID(url);
 
       expect(result).toBe("alert-456");
@@ -196,13 +299,17 @@ describe("extractRuleUID", () => {
     it("should throw error for invalid URL format", () => {
       const url = "not-a-valid-url";
 
-      expect(() => extractRuleUID(url)).toThrow("Could not extract rule UID from generatorURL");
+      expect(() => extractRuleUID(url)).toThrow(
+        "Could not extract rule UID from generatorURL",
+      );
     });
 
     it("should throw error for URL without /alerting/ path", () => {
       const url = "https://grafana.example.com/dashboard/db/my-dashboard";
 
-      expect(() => extractRuleUID(url)).toThrow("Could not extract rule UID from generatorURL");
+      expect(() => extractRuleUID(url)).toThrow(
+        "Could not extract rule UID from generatorURL",
+      );
     });
 
     it("should extract UID from URL with base path prefix (e.g., /api/alerting/...)", () => {
@@ -222,32 +329,40 @@ describe("extractRuleUID", () => {
     });
 
     it("should throw error for empty string", () => {
-      expect(() => extractRuleUID("")).toThrow("Could not extract rule UID from generatorURL");
+      expect(() => extractRuleUID("")).toThrow(
+        "Could not extract rule UID from generatorURL",
+      );
     });
 
     it("should throw error for URL with missing UID", () => {
       const url = "https://grafana.example.com/alerting//view";
 
-      expect(() => extractRuleUID(url)).toThrow("Could not extract rule UID from generatorURL");
+      expect(() => extractRuleUID(url)).toThrow(
+        "Could not extract rule UID from generatorURL",
+      );
     });
 
     it("should throw error for URL with only /alerting/", () => {
       const url = "https://grafana.example.com/alerting/";
 
-      expect(() => extractRuleUID(url)).toThrow("Could not extract rule UID from generatorURL");
+      expect(() => extractRuleUID(url)).toThrow(
+        "Could not extract rule UID from generatorURL",
+      );
     });
   });
 
   describe("edge cases", () => {
     it("should handle URL with fragment", () => {
-      const url = "https://grafana.example.com/alerting/abc123/view?orgId=1#tab=query";
+      const url =
+        "https://grafana.example.com/alerting/abc123/view?orgId=1#tab=query";
       const result = extractRuleUID(url);
 
       expect(result).toBe("abc123");
     });
 
     it("should handle URL with multiple query parameters", () => {
-      const url = "https://grafana.example.com/alerting/abc123/view?orgId=1&var-datasource=prometheus&var-cluster=prod";
+      const url =
+        "https://grafana.example.com/alerting/abc123/view?orgId=1&var-datasource=prometheus&var-cluster=prod";
       const result = extractRuleUID(url);
 
       expect(result).toBe("abc123");
@@ -263,7 +378,8 @@ describe("extractRuleUID", () => {
 });
 
 describe("fetchLiveAlertState", () => {
-  const generatorURL = "https://grafana.example.com/alerting/abc123/view?orgId=1";
+  const generatorURL =
+    "https://grafana.example.com/alerting/abc123/view?orgId=1";
   let mockClient: MultiServerMCPClient;
 
   beforeEach(() => {
@@ -302,7 +418,11 @@ describe("fetchLiveAlertState", () => {
           },
         ],
         queries: [
-          { ref_id: "A", datasource_uid: "prometheus", expression: "cpu_usage_percent" },
+          {
+            ref_id: "A",
+            datasource_uid: "prometheus",
+            expression: "cpu_usage_percent",
+          },
         ],
       };
 
@@ -311,7 +431,11 @@ describe("fetchLiveAlertState", () => {
       ]);
       mockInvoke.mockResolvedValue(mockResponse);
 
-      const result = await fetchLiveAlertState(mockClient, "abc123", generatorURL);
+      const result = await fetchLiveAlertState(
+        mockClient,
+        "abc123",
+        generatorURL,
+      );
 
       expect(result).toMatchObject({
         ruleUID: "abc123",
@@ -395,7 +519,11 @@ describe("fetchLiveAlertState", () => {
       ]);
       mockInvoke.mockResolvedValue(mockResponse);
 
-      const result = await fetchLiveAlertState(mockClient, "abc123", generatorURL);
+      const result = await fetchLiveAlertState(
+        mockClient,
+        "abc123",
+        generatorURL,
+      );
 
       expect(result.notificationSettings).toEqual({
         receiver: "slack-alerts",
@@ -436,7 +564,11 @@ describe("fetchLiveAlertState", () => {
       ]);
       mockInvoke.mockResolvedValue(mockResponse);
 
-      const result = await fetchLiveAlertState(mockClient, "record-001", generatorURL);
+      const result = await fetchLiveAlertState(
+        mockClient,
+        "record-001",
+        generatorURL,
+      );
 
       expect(result.type).toBe("recording");
       expect(result.record).toEqual({
@@ -487,7 +619,11 @@ describe("fetchLiveAlertState", () => {
       ]);
       mockInvoke.mockResolvedValue(mockResponse);
 
-      const result = await fetchLiveAlertState(mockClient, "abc123", generatorURL);
+      const result = await fetchLiveAlertState(
+        mockClient,
+        "abc123",
+        generatorURL,
+      );
 
       expect(result.alerts).toHaveLength(3);
       expect(result.activeAt).toBe("2025-01-15T10:20:00Z"); // First firing alert
@@ -514,7 +650,11 @@ describe("fetchLiveAlertState", () => {
       ]);
       mockInvoke.mockResolvedValue(mockResponse);
 
-      const result = await fetchLiveAlertState(mockClient, "abc123", generatorURL);
+      const result = await fetchLiveAlertState(
+        mockClient,
+        "abc123",
+        generatorURL,
+      );
 
       expect(result.ruleUID).toBe("abc123");
       expect(result.ruleName).toBe("Minimal Alert");
@@ -554,7 +694,11 @@ describe("fetchLiveAlertState", () => {
       ]);
       mockInvoke.mockResolvedValue(mockResponse);
 
-      const result = await fetchLiveAlertState(mockClient, "abc123", generatorURL);
+      const result = await fetchLiveAlertState(
+        mockClient,
+        "abc123",
+        generatorURL,
+      );
 
       expect(result.labels).toEqual({});
       expect(result.annotations).toEqual({});
@@ -587,7 +731,11 @@ describe("fetchLiveAlertState", () => {
       ]);
       mockInvoke.mockResolvedValue(mockResponse);
 
-      const result = await fetchLiveAlertState(mockClient, "abc123", generatorURL);
+      const result = await fetchLiveAlertState(
+        mockClient,
+        "abc123",
+        generatorURL,
+      );
 
       expect(result.condition).toBeUndefined();
       expect(result.for).toBeUndefined();
@@ -625,7 +773,11 @@ describe("fetchLiveAlertState", () => {
       ]);
       mockInvoke.mockResolvedValue(mockResponse);
 
-      const result = await fetchLiveAlertState(mockClient, "abc123", generatorURL);
+      const result = await fetchLiveAlertState(
+        mockClient,
+        "abc123",
+        generatorURL,
+      );
 
       expect(result.ruleUID).toBe("12345");
       expect(result.ruleName).toBe("true");
@@ -649,7 +801,11 @@ describe("fetchLiveAlertState", () => {
       ]);
       mockInvoke.mockResolvedValue(mockResponse);
 
-      const result = await fetchLiveAlertState(mockClient, "abc123", generatorURL);
+      const result = await fetchLiveAlertState(
+        mockClient,
+        "abc123",
+        generatorURL,
+      );
 
       expect(result.isPaused).toBe(true); // coerced to boolean
     });
@@ -682,13 +838,29 @@ describe("fetchLiveAlertState", () => {
       ]);
       mockInvoke.mockResolvedValue(mockResponse);
 
-      const result = await fetchLiveAlertState(mockClient, "abc123", generatorURL);
+      const result = await fetchLiveAlertState(
+        mockClient,
+        "abc123",
+        generatorURL,
+      );
 
       expect(result.alerts).toHaveLength(4);
       // First three should have defaults
-      expect(result.alerts?.[0]).toMatchObject({ labels: {}, annotations: {}, state: "unknown" });
-      expect(result.alerts?.[1]).toMatchObject({ labels: {}, annotations: {}, state: "unknown" });
-      expect(result.alerts?.[2]).toMatchObject({ labels: {}, annotations: {}, state: "unknown" });
+      expect(result.alerts?.[0]).toMatchObject({
+        labels: {},
+        annotations: {},
+        state: "unknown",
+      });
+      expect(result.alerts?.[1]).toMatchObject({
+        labels: {},
+        annotations: {},
+        state: "unknown",
+      });
+      expect(result.alerts?.[2]).toMatchObject({
+        labels: {},
+        annotations: {},
+        state: "unknown",
+      });
       // Fourth should be properly parsed
       expect(result.alerts?.[3]).toMatchObject({
         labels: { instance: "server-01" },
@@ -718,7 +890,11 @@ describe("fetchLiveAlertState", () => {
       ]);
       mockInvoke.mockResolvedValue(mockResponse);
 
-      const result = await fetchLiveAlertState(mockClient, "abc123", generatorURL);
+      const result = await fetchLiveAlertState(
+        mockClient,
+        "abc123",
+        generatorURL,
+      );
 
       expect(result.queries?.[0].refID).toBe("A");
       expect(result.queries?.[1].refID).toBe("B");
@@ -733,16 +909,20 @@ describe("fetchLiveAlertState", () => {
       ]);
 
       await expect(
-        fetchLiveAlertState(mockClient, "abc123", generatorURL)
-      ).rejects.toThrow("MCP tool 'alerting_manage_rules' not found. Available tools: other_tool, another_tool");
+        fetchLiveAlertState(mockClient, "abc123", generatorURL),
+      ).rejects.toThrow(
+        "MCP tool 'alerting_manage_rules' not found. Available tools: other_tool, another_tool",
+      );
     });
 
     it("should throw error when no tools available", async () => {
       mockGetTools.mockResolvedValue([]);
 
       await expect(
-        fetchLiveAlertState(mockClient, "abc123", generatorURL)
-      ).rejects.toThrow("MCP tool 'alerting_manage_rules' not found. Available tools:");
+        fetchLiveAlertState(mockClient, "abc123", generatorURL),
+      ).rejects.toThrow(
+        "MCP tool 'alerting_manage_rules' not found. Available tools:",
+      );
     });
 
     it("should throw error when tool has no invoke method", async () => {
@@ -751,7 +931,7 @@ describe("fetchLiveAlertState", () => {
       ]);
 
       await expect(
-        fetchLiveAlertState(mockClient, "abc123", generatorURL)
+        fetchLiveAlertState(mockClient, "abc123", generatorURL),
       ).rejects.toThrow("MCP tool 'alerting_manage_rules' not found");
     });
 
@@ -759,7 +939,7 @@ describe("fetchLiveAlertState", () => {
       mockGetTools.mockRejectedValue(new Error("Connection failed"));
 
       await expect(
-        fetchLiveAlertState(mockClient, "abc123", generatorURL)
+        fetchLiveAlertState(mockClient, "abc123", generatorURL),
       ).rejects.toThrow("Connection failed");
     });
 
@@ -770,7 +950,7 @@ describe("fetchLiveAlertState", () => {
       mockInvoke.mockRejectedValue(new Error("Rule not found"));
 
       await expect(
-        fetchLiveAlertState(mockClient, "abc123", generatorURL)
+        fetchLiveAlertState(mockClient, "abc123", generatorURL),
       ).rejects.toThrow("Rule not found");
     });
 
@@ -780,7 +960,11 @@ describe("fetchLiveAlertState", () => {
       ]);
       mockInvoke.mockResolvedValue(null);
 
-      const result = await fetchLiveAlertState(mockClient, "abc123", generatorURL);
+      const result = await fetchLiveAlertState(
+        mockClient,
+        "abc123",
+        generatorURL,
+      );
 
       expect(result.ruleUID).toBe("");
       expect(result.ruleName).toBe("");
@@ -794,7 +978,11 @@ describe("fetchLiveAlertState", () => {
       ]);
       mockInvoke.mockResolvedValue("invalid response");
 
-      const result = await fetchLiveAlertState(mockClient, "abc123", generatorURL);
+      const result = await fetchLiveAlertState(
+        mockClient,
+        "abc123",
+        generatorURL,
+      );
 
       expect(result.ruleUID).toBe("");
       expect(result.ruleName).toBe("");
@@ -824,7 +1012,11 @@ describe("fetchLiveAlertState", () => {
       ]);
       mockInvoke.mockResolvedValue({ uid: "abc123", title: "Test" });
 
-      const result = await fetchLiveAlertState(mockClient, "abc123", generatorURL);
+      const result = await fetchLiveAlertState(
+        mockClient,
+        "abc123",
+        generatorURL,
+      );
 
       expect(result.ruleUID).toBe("abc123");
     });
@@ -858,7 +1050,11 @@ describe("fetchLiveAlertState", () => {
       ]);
       mockInvoke.mockResolvedValue(mockResponse);
 
-      const result = await fetchLiveAlertState(mockClient, "abc123", generatorURL);
+      const result = await fetchLiveAlertState(
+        mockClient,
+        "abc123",
+        generatorURL,
+      );
 
       expect(result.notificationSettings).toEqual({
         receiver: "pagerduty",
@@ -893,7 +1089,11 @@ describe("fetchLiveAlertState", () => {
       ]);
       mockInvoke.mockResolvedValue(mockResponse);
 
-      const result = await fetchLiveAlertState(mockClient, "abc123", generatorURL);
+      const result = await fetchLiveAlertState(
+        mockClient,
+        "abc123",
+        generatorURL,
+      );
 
       expect(result.notificationSettings?.groupBy).toBeUndefined();
     });

@@ -1,8 +1,85 @@
 import { MultiServerMCPClient } from "@langchain/mcp-adapters";
 import pino from "pino";
-import type { AlertInstance, LiveAlertState, NotificationSettings, QuerySummary, RecordConfig } from "../../types/grafana.js";
+import type {
+  AlertInstance,
+  LiveAlertState,
+  NotificationSettings,
+  QuerySummary,
+  RecordConfig,
+} from "../../types/grafana.js";
 
 const logger = pino({ name: "grafana-mcp" });
+
+/**
+ * Parses optional HTTP headers for the Grafana MCP connection from
+ * `GRAFANA_MCP_HEADERS`.
+ *
+ * **JSON (recommended for non-trivial values):** a single JSON object whose
+ * values are strings, e.g.
+ * `{"CF-Access-Client-Id":"...","CF-Access-Client-Secret":"..."}`
+ *
+ * **Comma-separated (legacy):** `Name: value, Name2: value2`. Each pair is
+ * split on the **first** `:` only so values may contain colons.
+ */
+export function parseGrafanaMcpHeadersFromEnv(): Record<string, string> {
+  const raw = process.env.GRAFANA_MCP_HEADERS?.trim();
+  if (!raw) {
+    return {};
+  }
+  if (raw.startsWith("{")) {
+    let parsed: unknown;
+    try {
+      parsed = JSON.parse(raw);
+    } catch {
+      throw new Error(
+        "GRAFANA_MCP_HEADERS looks like JSON but could not be parsed",
+      );
+    }
+    if (
+      parsed === null ||
+      typeof parsed !== "object" ||
+      Array.isArray(parsed)
+    ) {
+      throw new Error(
+        "GRAFANA_MCP_HEADERS JSON must be a non-null object with string values",
+      );
+    }
+    const out: Record<string, string> = {};
+    for (const [k, v] of Object.entries(parsed)) {
+      if (typeof v !== "string") {
+        throw new Error(
+          `GRAFANA_MCP_HEADERS: value for "${k}" must be a string`,
+        );
+      }
+      out[k] = v;
+    }
+    return out;
+  }
+  return parseCommaSeparatedHeaderPairs(raw);
+}
+
+function parseCommaSeparatedHeaderPairs(raw: string): Record<string, string> {
+  const out: Record<string, string> = {};
+  const segments = raw
+    .split(",")
+    .map((s) => s.trim())
+    .filter((s) => s.length > 0);
+  for (const segment of segments) {
+    const i = segment.indexOf(":");
+    if (i === -1) {
+      throw new Error(
+        `GRAFANA_MCP_HEADERS: expected "Name: value", missing ':' in segment starting "${segment.slice(0, 48)}…"`,
+      );
+    }
+    const key = segment.slice(0, i).trim();
+    const value = segment.slice(i + 1).trim();
+    if (!key) {
+      throw new Error("GRAFANA_MCP_HEADERS: empty header name in segment");
+    }
+    out[key] = value;
+  }
+  return out;
+}
 
 /**
  * Creates a MultiServerMCPClient for connecting to the Grafana MCP server via
@@ -21,12 +98,13 @@ export function createGrafanaMcpClient(): MultiServerMCPClient {
   if (!url) {
     throw new Error("GRAFANA_MCP_URL is required");
   }
-
+  const headers = parseGrafanaMcpHeadersFromEnv();
   return new MultiServerMCPClient({
     mcpServers: {
       grafana: {
         url,
         transport: "http",
+        headers,
       },
     },
   });
@@ -69,7 +147,10 @@ export function extractRuleUID(generatorURL: string): string {
   const afterAlerting = segments.slice(alertingIndex + 1);
 
   // Remove optional "view" suffix if present
-  if (afterAlerting.length > 0 && afterAlerting[afterAlerting.length - 1] === "view") {
+  if (
+    afterAlerting.length > 0 &&
+    afterAlerting[afterAlerting.length - 1] === "view"
+  ) {
     afterAlerting.pop();
   }
 
@@ -97,7 +178,7 @@ function extractStringField(
   raw: RawMcpResponse,
   field: string,
   ruleUID: string,
-  defaultValue = ""
+  defaultValue = "",
 ): string {
   const value = raw[field];
   if (value === undefined || value === null) {
@@ -107,7 +188,10 @@ function extractStringField(
     return defaultValue;
   }
   if (typeof value !== "string") {
-    logger.warn({ field, ruleUID, type: typeof value }, "Field has unexpected type");
+    logger.warn(
+      { field, ruleUID, type: typeof value },
+      "Field has unexpected type",
+    );
     return String(value);
   }
   return value;
@@ -116,14 +200,17 @@ function extractStringField(
 function extractOptionalStringField(
   raw: RawMcpResponse,
   field: string,
-  ruleUID: string
+  ruleUID: string,
 ): string | undefined {
   const value = raw[field];
   if (value === undefined || value === null) {
     return undefined;
   }
   if (typeof value !== "string") {
-    logger.warn({ field, ruleUID, type: typeof value }, "Optional field has unexpected type");
+    logger.warn(
+      { field, ruleUID, type: typeof value },
+      "Optional field has unexpected type",
+    );
     return String(value);
   }
   return value;
@@ -132,14 +219,17 @@ function extractOptionalStringField(
 function extractRecordField(
   raw: RawMcpResponse,
   field: string,
-  ruleUID: string
+  ruleUID: string,
 ): Record<string, string> {
   const value = raw[field];
   if (value === undefined || value === null) {
     return {};
   }
   if (typeof value !== "object" || Array.isArray(value)) {
-    logger.warn({ field, ruleUID, type: typeof value }, "Record field has unexpected type");
+    logger.warn(
+      { field, ruleUID, type: typeof value },
+      "Record field has unexpected type",
+    );
     return {};
   }
 
@@ -155,14 +245,17 @@ function extractBooleanField(
   raw: RawMcpResponse,
   field: string,
   ruleUID: string,
-  defaultValue = false
+  defaultValue = false,
 ): boolean {
   const value = raw[field];
   if (value === undefined || value === null) {
     return defaultValue;
   }
   if (typeof value !== "boolean") {
-    logger.warn({ field, ruleUID, type: typeof value }, "Boolean field has unexpected type");
+    logger.warn(
+      { field, ruleUID, type: typeof value },
+      "Boolean field has unexpected type",
+    );
     return Boolean(value);
   }
   return value;
@@ -171,14 +264,17 @@ function extractBooleanField(
 function extractAlertsArray(
   raw: RawMcpResponse,
   field: string,
-  ruleUID: string
+  ruleUID: string,
 ): AlertInstance[] | undefined {
   const value = raw[field];
   if (value === undefined || value === null) {
     return undefined;
   }
   if (!Array.isArray(value)) {
-    logger.warn({ field, ruleUID, type: typeof value }, "Alerts field is not an array");
+    logger.warn(
+      { field, ruleUID, type: typeof value },
+      "Alerts field is not an array",
+    );
     return undefined;
   }
 
@@ -210,7 +306,8 @@ function extractAlertsArray(
       labels: extractAlertRecord("labels"),
       annotations: extractAlertRecord("annotations"),
       state: typeof alertObj.state === "string" ? alertObj.state : "unknown",
-      activeAt: typeof alertObj.activeAt === "string" ? alertObj.activeAt : undefined,
+      activeAt:
+        typeof alertObj.activeAt === "string" ? alertObj.activeAt : undefined,
       value: typeof alertObj.value === "string" ? alertObj.value : undefined,
     };
   });
@@ -219,7 +316,7 @@ function extractAlertsArray(
 function extractQueriesArray(
   raw: RawMcpResponse,
   field: string,
-  ruleUID: string
+  ruleUID: string,
 ): QuerySummary[] | undefined {
   const value = raw[field];
   if (!Array.isArray(value)) {
@@ -234,8 +331,18 @@ function extractQueriesArray(
 
     const q = query as Record<string, unknown>;
     return {
-      refID: typeof q.ref_id === "string" ? q.ref_id : (typeof q.refID === "string" ? q.refID : ""),
-      datasourceUID: typeof q.datasource_uid === "string" ? q.datasource_uid : (typeof q.datasourceUID === "string" ? q.datasourceUID : ""),
+      refID:
+        typeof q.ref_id === "string"
+          ? q.ref_id
+          : typeof q.refID === "string"
+            ? q.refID
+            : "",
+      datasourceUID:
+        typeof q.datasource_uid === "string"
+          ? q.datasource_uid
+          : typeof q.datasourceUID === "string"
+            ? q.datasourceUID
+            : "",
       expression: typeof q.expression === "string" ? q.expression : undefined,
     };
   });
@@ -244,7 +351,7 @@ function extractQueriesArray(
 function extractNotificationSettings(
   raw: RawMcpResponse,
   field: string,
-  ruleUID: string
+  ruleUID: string,
 ): NotificationSettings | undefined {
   const value = raw[field];
   if (typeof value !== "object" || value === null || Array.isArray(value)) {
@@ -254,19 +361,29 @@ function extractNotificationSettings(
   const ns = value as Record<string, unknown>;
   return {
     receiver: typeof ns.receiver === "string" ? ns.receiver : undefined,
-    groupBy: Array.isArray(ns.group_by) ? ns.group_by.filter((v): v is string => typeof v === "string") : undefined,
+    groupBy: Array.isArray(ns.group_by)
+      ? ns.group_by.filter((v): v is string => typeof v === "string")
+      : undefined,
     groupWait: typeof ns.group_wait === "string" ? ns.group_wait : undefined,
-    groupInterval: typeof ns.group_interval === "string" ? ns.group_interval : undefined,
-    repeatInterval: typeof ns.repeat_interval === "string" ? ns.repeat_interval : undefined,
-    muteTimeIntervals: Array.isArray(ns.mute_time_intervals) ? ns.mute_time_intervals.filter((v): v is string => typeof v === "string") : undefined,
-    activeTimeIntervals: Array.isArray(ns.active_time_intervals) ? ns.active_time_intervals.filter((v): v is string => typeof v === "string") : undefined,
+    groupInterval:
+      typeof ns.group_interval === "string" ? ns.group_interval : undefined,
+    repeatInterval:
+      typeof ns.repeat_interval === "string" ? ns.repeat_interval : undefined,
+    muteTimeIntervals: Array.isArray(ns.mute_time_intervals)
+      ? ns.mute_time_intervals.filter((v): v is string => typeof v === "string")
+      : undefined,
+    activeTimeIntervals: Array.isArray(ns.active_time_intervals)
+      ? ns.active_time_intervals.filter(
+          (v): v is string => typeof v === "string",
+        )
+      : undefined,
   };
 }
 
 function extractRecordConfig(
   raw: RawMcpResponse,
   field: string,
-  ruleUID: string
+  ruleUID: string,
 ): RecordConfig | undefined {
   const value = raw[field];
   if (typeof value !== "object" || value === null || Array.isArray(value)) {
@@ -284,7 +401,10 @@ function extractRecordConfig(
   return {
     from,
     metric,
-    targetDatasourceUID: typeof rec.target_datasource_uid === "string" ? rec.target_datasource_uid : undefined,
+    targetDatasourceUID:
+      typeof rec.target_datasource_uid === "string"
+        ? rec.target_datasource_uid
+        : undefined,
   };
 }
 
@@ -303,36 +423,46 @@ function extractRecordConfig(
 export async function fetchLiveAlertState(
   client: MultiServerMCPClient,
   ruleUID: string,
-  generatorURL: string
+  generatorURL: string,
 ): Promise<LiveAlertState> {
   // Get available tools for diagnostic purposes
   const tools = await client.getTools();
-  logger.debug({
-    availableTools: tools.map((t) => ("name" in t ? t.name : "unknown")),
-    ruleUID,
-  }, "MCP tools discovered");
+  logger.debug(
+    {
+      availableTools: tools.map((t) => ("name" in t ? t.name : "unknown")),
+      ruleUID,
+    },
+    "MCP tools discovered",
+  );
 
   // The Grafana MCP tool for managing alert rules
   const toolName = "alerting_manage_rules";
   const alertingTool = tools.find((t) =>
-    "name" in t ? t.name === toolName : false
+    "name" in t ? t.name === toolName : false,
   );
 
   if (!alertingTool || !("invoke" in alertingTool)) {
     throw new Error(
-      `MCP tool '${toolName}' not found. Available tools: ${
-        tools.map((t) => ("name" in t ? t.name : "unknown")).join(", ")
-      }`
+      `MCP tool '${toolName}' not found. Available tools: ${tools
+        .map((t) => ("name" in t ? t.name : "unknown"))
+        .join(", ")}`,
     );
   }
 
   // Invoke the tool with operation "get" to fetch rule details
-  const response = await (alertingTool as { invoke: (args: Record<string, unknown>) => Promise<unknown> }).invoke({
+  const response = await (
+    alertingTool as {
+      invoke: (args: Record<string, unknown>) => Promise<unknown>;
+    }
+  ).invoke({
     operation: "get",
     rule_uid: ruleUID,
   });
 
-  logger.debug({ response, ruleUID, responseType: typeof response }, "Raw MCP tool response");
+  logger.debug(
+    { response, ruleUID, responseType: typeof response },
+    "Raw MCP tool response",
+  );
 
   // Defensive mapping: handle cases where response might be a JSON string or an object
   let raw: RawMcpResponse;
@@ -342,13 +472,19 @@ export async function fetchLiveAlertState(
     // MCP sometimes returns JSON as a string - parse it
     try {
       const parsed = JSON.parse(response);
-      raw = (typeof parsed === "object" && parsed !== null) ? parsed : {};
+      raw = typeof parsed === "object" && parsed !== null ? parsed : {};
     } catch {
-      logger.error({ response: response.substring(0, 200), ruleUID }, "Failed to parse MCP response as JSON");
+      logger.error(
+        { response: response.substring(0, 200), ruleUID },
+        "Failed to parse MCP response as JSON",
+      );
       raw = {};
     }
   } else {
-    logger.error({ responseType: typeof response, ruleUID }, "Unexpected MCP response type");
+    logger.error(
+      { responseType: typeof response, ruleUID },
+      "Unexpected MCP response type",
+    );
     raw = {};
   }
 
@@ -356,7 +492,9 @@ export async function fetchLiveAlertState(
   const alerts = extractAlertsArray(raw, "alerts", ruleUID);
 
   // Derive activeAt and value from first firing alert (for backwards compatibility)
-  const firstFiringAlert = alerts?.find((a) => a.state === "firing" || a.state === "pending") ?? alerts?.[0];
+  const firstFiringAlert =
+    alerts?.find((a) => a.state === "firing" || a.state === "pending") ??
+    alerts?.[0];
   const activeAt = firstFiringAlert?.activeAt;
   const value = firstFiringAlert?.value;
 
@@ -398,7 +536,11 @@ export async function fetchLiveAlertState(
     queries: extractQueriesArray(raw, "queries", ruleUID),
 
     // Notification configuration
-    notificationSettings: extractNotificationSettings(raw, "notification_settings", ruleUID),
+    notificationSettings: extractNotificationSettings(
+      raw,
+      "notification_settings",
+      ruleUID,
+    ),
 
     // Recording rule configuration
     record: extractRecordConfig(raw, "record", ruleUID),
@@ -413,13 +555,16 @@ export async function fetchLiveAlertState(
     silenceURL: extractOptionalStringField(raw, "silenceURL", ruleUID),
   };
 
-  logger.info({
-    ruleUID: state.ruleUID,
-    ruleName: state.ruleName,
-    state: state.state,
-    health: state.health,
-    alertCount: state.alerts?.length ?? 0,
-  }, "Live alert state fetched from Grafana MCP");
+  logger.info(
+    {
+      ruleUID: state.ruleUID,
+      ruleName: state.ruleName,
+      state: state.state,
+      health: state.health,
+      alertCount: state.alerts?.length ?? 0,
+    },
+    "Live alert state fetched from Grafana MCP",
+  );
 
   return state;
 }

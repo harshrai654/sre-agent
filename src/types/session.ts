@@ -18,13 +18,13 @@ export interface InvocationContext {
  * SessionContext is the complete runtime context passed to the DeepAgent.
  * It includes the invocation metadata, live alert state, the assembled system
  * prompt, and any files that should be made available to the agent (e.g.,
- * ALERT_CONTEXT.md, AGENTS.md).
+ * `/ALERT_CONTEXT.md`, optional AGENTS.md content).
  */
 export interface SessionContext {
   invocation: InvocationContext;
   liveAlertState: LiveAlertState;
   systemPrompt: string;
-  files: Record<string, string>; // always includes "ALERT_CONTEXT.md"
+  files: Record<string, string>; // always includes "/ALERT_CONTEXT.md"
 }
 
 /**

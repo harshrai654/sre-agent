@@ -38,7 +38,7 @@ export function createPublisherModule(deps: PublisherModuleDeps): PublisherModul
         await client.chat.postMessage({
           channel,
           thread_ts,
-          text: "🤖 SRE Agent Analysis",
+          text: "🤖 Alert Cop Analysis",
           blocks,
         });
         logger.info({ channel, thread_ts }, "Posted SRE analysis to Slack thread");

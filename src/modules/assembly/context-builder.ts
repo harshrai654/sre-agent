@@ -45,7 +45,7 @@ function loadTemplate(): HandlebarsTemplateDelegate {
     "..",
     "..",
     "templates",
-    "alert-context.md"
+    "alert-context.md",
   );
   const templateSource = readFileSync(templatePath, "utf-8");
 
@@ -98,7 +98,7 @@ export function sanitizeLabelValue(value: string): string {
  * @returns A new record with sanitized values
  */
 export function sanitizeRecord(
-  record: Record<string, string>
+  record: Record<string, string>,
 ): Record<string, string> {
   const result: Record<string, string> = {};
   for (const [key, value] of Object.entries(record)) {
@@ -127,7 +127,7 @@ export function sanitizeRecord(
  */
 export function buildAlertContextFile(
   state: LiveAlertState,
-  includesPastIncidents: boolean
+  includesPastIncidents: boolean,
 ): string {
   // Load and compile the Handlebars template (cached after first load)
   const template = loadTemplate();
@@ -166,6 +166,7 @@ export function buildAlertContextFile(
     health: state.health,
     for: state.for ?? "(not set)",
     activeSince: state.activeAt ?? "(unknown)",
+    lastEvaluation: state.lastEvaluation ?? "(not available)",
     generatorURL: state.generatorURL,
     dashboardURL: state.dashboardURL ?? "(none)",
     panelURL: state.panelURL ?? "(none)",
@@ -173,6 +174,7 @@ export function buildAlertContextFile(
 
     // Conditional flags
     isPaused: state.isPaused,
+    isFiring: state.state === "firing",
     lastError: state.lastError ? sanitizeLabelValue(state.lastError) : null,
     includesPastIncidents,
 

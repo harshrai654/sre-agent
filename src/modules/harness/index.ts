@@ -1,9 +1,9 @@
-import { MultiServerMCPClient } from "@langchain/mcp-adapters";
 import type { BaseMessage } from "@langchain/core/messages";
 import { HumanMessage } from "@langchain/core/messages";
 import { ChatOpenAI } from "@langchain/openai";
 import { createDeepAgent } from "deepagents";
 import pino from "pino";
+import { createGrafanaMcpClient } from "../assembly/grafana-mcp.js";
 import type { AnalysisResult, SessionContext } from "../../types/session.js";
 
 function requireEnv(
@@ -16,7 +16,7 @@ function requireEnv(
   return v;
 }
 
-const GRAFANA_MCP_URL = requireEnv("GRAFANA_MCP_URL");
+requireEnv("GRAFANA_MCP_URL");
 const LLM_MODEL = requireEnv("LLM_MODEL");
 const OPENAI_API_KEY = requireEnv("OPENAI_API_KEY");
 
@@ -141,12 +141,7 @@ export function formatTranscript(messages: BaseMessage[]): string {
 export async function runAgentSession(
   context: SessionContext,
 ): Promise<AnalysisResult> {
-  const mcpClient = new MultiServerMCPClient({
-    grafana: {
-      url: GRAFANA_MCP_URL,
-      transport: "http",
-    },
-  });
+  const mcpClient = createGrafanaMcpClient();
 
   try {
     const mcpTools = await mcpClient.getTools();
@@ -168,7 +163,7 @@ export async function runAgentSession(
     const result = await agent.invoke({
       messages: [
         new HumanMessage(
-          "Read ALERT_CONTEXT.md and complete the investigation task described in it.",
+          "Read /ALERT_CONTEXT.md and complete the investigation task described in it.",
         ),
       ],
       files: sessionFilesToAgentFiles(context.files),

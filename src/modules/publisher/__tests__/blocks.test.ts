@@ -46,7 +46,7 @@ describe("buildAnalysisBlocks", () => {
       const blocks = buildAnalysisBlocks(createMockAnalysisResult());
       expect(blocks[0]).toMatchObject({
         type: "header",
-        text: { type: "plain_text", text: "🤖 SRE Agent Analysis", emoji: true },
+        text: { type: "plain_text", text: "🤖 Alert Cop Analysis", emoji: true },
       });
       expect(blocks[1]).toMatchObject({ type: "context" });
       expect(blocks[2]).toMatchObject({ type: "divider" });

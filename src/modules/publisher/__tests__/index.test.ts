@@ -98,7 +98,7 @@ describe("createPublisherModule", () => {
       const arg = mockPostMessage.mock.calls[0][0];
       expect(arg.channel).toBe("CCHANNEL");
       expect(arg.thread_ts).toBe("111.222");
-      expect(arg.text).toBe("🤖 SRE Agent Analysis");
+      expect(arg.text).toBe("🤖 Alert Cop Analysis");
       expect(Array.isArray(arg.blocks)).toBe(true);
       expect(arg.blocks!.length).toBeGreaterThan(0);
     });

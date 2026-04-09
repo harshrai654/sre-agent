@@ -35,11 +35,27 @@ await bot.start();
 logger.info("sre-agent ready");
 
 // Graceful shutdown
-const shutdown = async (signal: string) => {
-  logger.info({ signal }, "Shutting down");
-  await bot.stop();
-  agentsMdLoader.stop();
-  process.exit(0);
+let shuttingDown = false;
+const shutdown = async (signal: string, opts?: { exitCode?: number }) => {
+  if (shuttingDown) return;
+  shuttingDown = true;
+
+  const exitCode = opts?.exitCode ?? 0;
+  logger.info({ signal, exitCode }, "Shutting down");
+
+  try {
+    await bot.stop();
+  } catch (err) {
+    logger.warn({ err }, "Error stopping Slack bot during shutdown");
+  }
+
+  try {
+    agentsMdLoader.stop();
+  } catch (err) {
+    logger.warn({ err }, "Error stopping AGENTS.md watcher during shutdown");
+  }
+
+  process.exit(exitCode);
 };
 
 process.on("SIGINT", () => {
@@ -47,6 +63,10 @@ process.on("SIGINT", () => {
 });
 process.on("SIGTERM", () => {
   void shutdown("SIGTERM");
+});
+// Commonly used by nodemon for restarts (best-effort graceful shutdown)
+process.on("SIGUSR2", () => {
+  void shutdown("SIGUSR2");
 });
 
 process.on("unhandledRejection", (reason) => {
@@ -58,5 +78,5 @@ process.on("unhandledRejection", (reason) => {
 
 process.on("uncaughtException", (error) => {
   logger.error({ error }, "Uncaught exception");
-  process.exit(1);
+  void shutdown("uncaughtException", { exitCode: 1 });
 });

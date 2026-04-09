@@ -164,7 +164,7 @@ export function createBotModule(deps: BotModuleDeps): BotModule {
       await postThreadReply(
         say,
         triggerMessageTS,
-        "🔍 Investigating... I'll post the analysis here when done.",
+        "🔍 Alert Cop is investigating… I'll post the analysis here when done.",
       );
 
       // Step 6: Build InvocationContext and call onAlert

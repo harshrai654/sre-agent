@@ -216,7 +216,9 @@ describe("buildAlertContextFile", () => {
       const state = createMockAlertState({ alerts: [] });
       const result = buildAlertContextFile(state, false);
 
-      expect(result).toContain("(none — alert may be pending or rule-level)");
+      expect(result).toContain(
+        "(none — alert may be pending or rule-level; use Historical Recovery steps above)",
+      );
     });
 
     it("should handle alerts with missing optional fields", () => {
@@ -396,26 +398,31 @@ describe("buildAlertContextFile", () => {
       const result = buildAlertContextFile(state, false);
 
       expect(result).toContain("## Task");
-      expect(result).toContain("You are an SRE assistant investigating a Grafana alert");
+      expect(result).toContain("You are Alert Cop, investigating a Grafana alert");
       expect(result).toContain("Focus on:");
-      expect(result).toContain("1. Understanding the alert condition");
-      expect(result).toContain("5. Providing clear, actionable recommendations");
+      expect(result).toContain("Establishing the exact firing time window(s)");
+      expect(result).toContain("Performing both forward and reverse correlation paths");
+      expect(result).toContain(
+        "Providing a clear, evidence-backed root cause with time ranges explicitly named",
+      );
     });
 
     it("should include past incidents variant when includesPastIncidents is true", () => {
       const state = createMockAlertState();
       const result = buildAlertContextFile(state, true);
 
-      expect(result).toContain("The alert has fired before");
-      expect(result).toContain("5. Determining if this is a new issue or a recurrence");
-      expect(result).toContain("6. Providing clear, actionable recommendations");
+      expect(result).toContain(
+        "Determining if this is a new issue or a recurrence",
+      );
+      expect(result).toContain(
+        "Providing a clear, evidence-backed root cause with time ranges explicitly named",
+      );
     });
 
     it("should not include recurrence check when includesPastIncidents is false", () => {
       const state = createMockAlertState();
       const result = buildAlertContextFile(state, false);
 
-      expect(result).not.toContain("The alert has fired before");
       expect(result).not.toContain("new issue or a recurrence");
     });
   });

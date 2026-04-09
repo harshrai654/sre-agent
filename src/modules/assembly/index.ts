@@ -187,7 +187,8 @@ export function createAssemblyModule(deps: AssemblyModuleDeps): {
       liveAlertState,
       systemPrompt,
       files: {
-        "ALERT_CONTEXT.md": alertContextFile,
+        // Absolute path — Deep Agents filesystem tools index files under `/` (see deepagents StateBackend)
+        "/ALERT_CONTEXT.md": alertContextFile,
       },
     };
 

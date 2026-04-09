@@ -556,7 +556,7 @@ describe("createBotModule", () => {
 
       // Should post acknowledgement
       expect(mockSay).toHaveBeenCalledWith({
-        text: "🔍 Investigating... I'll post the analysis here when done.",
+        text: "🔍 Alert Cop is investigating… I'll post the analysis here when done.",
         thread_ts: "1234567890.123456",
       });
 
@@ -610,7 +610,7 @@ describe("createBotModule", () => {
 
       // Should post acknowledgement
       expect(mockSay).toHaveBeenCalledWith({
-        text: "🔍 Investigating... I'll post the analysis here when done.",
+        text: "🔍 Alert Cop is investigating… I'll post the analysis here when done.",
         thread_ts: "1234567890.123456",
       });
 
